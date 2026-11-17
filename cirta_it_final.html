@@ -358,10 +358,10 @@
                 </div>
                 <input type="file" id="import-file" accept=".json" class="hidden" onchange="importBackupJSON(event)">
                 <button onclick="openResetConfirm()" class="w-full mt-2 py-2.5 rounded-xl bg-rose-50 text-rose-700 border border-rose-200 text-xs font-extrabold active:scale-95">
-            تفريغ البيانات التجريبية والبدء من الصفر
-        </button>
-    </div>
-</section>
+                    تفريغ البيانات التجريبية والبدء من الصفر
+                </button>
+            </div>
+        </section>
 
     </main>
 
@@ -631,14 +631,27 @@
     </div>
 </div>
 
-<!-- 7. نافذة معاينة وطباعة الوصل -->
+<!-- 7. نافذة معاينة وطباعة الوصل (محدثة بدعم طابعة البلوتوث) -->
 <div id="receipt-modal" class="hidden fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
-    <div class="bg-white w-full max-w-[400px] rounded-3xl p-4 space-y-3 shadow-2xl">
+    <div class="bg-white w-full max-w-[420px] rounded-3xl p-4 space-y-3 shadow-2xl">
         <div id="print-area" class="bg-white p-3 rounded-2xl border border-slate-200 text-xs space-y-2"></div>
-        <div class="grid grid-cols-3 gap-2">
-            <button onclick="window.print()" class="py-2.5 rounded-xl bg-blue-700 text-white font-extrabold text-xs">طباعة</button>
-            <button onclick="shareReceiptWhatsApp()" class="py-2.5 rounded-xl bg-emerald-600 text-white font-extrabold text-xs">واتساب</button>
-            <button onclick="closeModal('receipt-modal')" class="py-2.5 rounded-xl bg-slate-100 text-slate-700 font-extrabold text-xs">إغلاق</button>
+        <div class="grid grid-cols-4 gap-1.5">
+            <button onclick="printThermalBluetooth()" class="py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-[11px] flex flex-col items-center justify-center gap-0.5 active:scale-95">
+                <i data-lucide="bluetooth" class="w-3.5 h-3.5"></i>
+                <span>بلوتوث</span>
+            </button>
+            <button onclick="window.print()" class="py-2.5 rounded-xl bg-blue-700 text-white font-extrabold text-[11px] flex flex-col items-center justify-center gap-0.5 active:scale-95">
+                <i data-lucide="printer" class="w-3.5 h-3.5"></i>
+                <span>طباعة</span>
+            </button>
+            <button onclick="shareReceiptWhatsApp()" class="py-2.5 rounded-xl bg-emerald-600 text-white font-extrabold text-[11px] flex flex-col items-center justify-center gap-0.5 active:scale-95">
+                <i data-lucide="share-2" class="w-3.5 h-3.5"></i>
+                <span>واتساب</span>
+            </button>
+            <button onclick="closeModal('receipt-modal')" class="py-2.5 rounded-xl bg-slate-100 text-slate-700 font-extrabold text-[11px] flex flex-col items-center justify-center gap-0.5 active:scale-95">
+                <i data-lucide="x" class="w-3.5 h-3.5"></i>
+                <span>إغلاق</span>
+            </button>
         </div>
     </div>
 </div>
@@ -795,7 +808,7 @@
         cart: {}
     };
 
-        let idbPromise = null;
+    let idbPromise = null;
     function openIDB() {
         if (idbPromise) return idbPromise;
         idbPromise = new Promise((resolve, reject) => {
@@ -813,7 +826,7 @@
         return idbPromise;
     }
 
-        async function saveState() {
+    async function saveState() {
         const dot = document.getElementById('storage-dot');
         if (dot) dot.className = 'w-1.5 h-1.5 rounded-full bg-amber-300 inline-block';
         const payload = JSON.stringify(state);
@@ -1154,7 +1167,7 @@
             : (state.lang === 'ar' ? 'مدفوع بالكامل (لا يوجد دين)' : 'Payé en totalité');
     }
 
-        function completePosSale(mode) {
+    function completePosSale(mode) {
         const clientId = Number(document.getElementById('pos-client').value);
         const client = state.parties.find(p => p.id === clientId);
         if (!client) return;
@@ -1595,6 +1608,99 @@
             </div>
         `;
         document.getElementById('receipt-modal').classList.remove('hidden');
+        if (window.lucide) lucide.createIcons();
+    }
+
+    // ==================== محرك الطباعة الحرارية بلوتوث (ESC/POS) ====================
+    async function printThermalBluetooth() {
+        if (!lastReceiptDoc) {
+            toast(state.lang === 'ar' ? 'لا يوجد وصل للطباعة' : 'Aucun bon à imprimer');
+            return;
+        }
+
+        if (!navigator.bluetooth) {
+            alert(state.lang === 'ar'
+                ? 'متصفحك لا يدعم البلوتوث المباشر. يُرجى استخدام متصفح Google Chrome على الهاتف وتفعيل الـ GPS والبلوتوث.'
+                : 'Bluetooth non supporté par ce navigateur. Utilisez Google Chrome sur Android.');
+            return;
+        }
+
+        try {
+            toast(state.lang === 'ar' ? 'جاري البحث عن الطابعة...' : 'Recherche d\'imprimante...');
+
+            const serviceUuids = [
+                '000018f0-0000-1000-8000-00805f9b34fb',
+                'e7810a71-73ae-499d-8c15-faa9aef0c3f2',
+                '49535343-fe7d-4ae5-8fa9-9fafd205e455'
+            ];
+
+            const device = await navigator.bluetooth.requestDevice({
+                acceptAllDevices: true,
+                optionalServices: serviceUuids
+            });
+
+            const server = await device.gatt.connect();
+            const services = await server.getPrimaryServices();
+            let service = services.find(s => serviceUuids.includes(s.uuid) || s.uuid.startsWith('000018f0') || s.uuid.startsWith('495353'));
+            if (!service && services.length > 0) service = services[0];
+
+            if (!service) throw new Error(state.lang === 'ar' ? 'لم يتم العثور على خدمة الطباعة' : 'Service d\'impression introuvable');
+
+            const characteristics = await service.getCharacteristics();
+            const writeChar = characteristics.find(c => c.properties.write || c.properties.writeWithoutResponse);
+
+            if (!writeChar) throw new Error(state.lang === 'ar' ? 'خاصية الإرسال غير متوفرة' : 'Caractéristique d\'écriture introuvable');
+
+            const d = lastReceiptDoc;
+            const encoder = new TextEncoder();
+
+            // تنسيق الفاتورة الحرارية قياس 58mm / 80mm
+            let text = '\x1B\x40'; // تهيئة الطابعة
+            text += '\x1B\x61\x01'; // توسيط
+            text += '\x1B\x21\x30'; // خط عريض وكبير
+            text += 'EL BARAKA\n';
+            text += '\x1B\x21\x00'; // خط عادي
+            text += 'Distribution Commerciale\n';
+            text += '--------------------------------\n';
+            text += `Bon: ${d.ref} | Date: ${d.date}\n`;
+            text += `Client: ${d.partyName}\n`;
+            text += '--------------------------------\n';
+            text += '\x1B\x61\x00'; // محاذاة لليسار
+
+            d.lines.forEach(l => {
+                text += `${l.name}\n`;
+                text += `  ${l.qty} x ${l.price} = ${l.sub} DA\n`;
+            });
+
+            text += '--------------------------------\n';
+            text += '\x1B\x21\x10'; // خط بارز للمجموع
+            text += `TOTAL : ${d.total} DA\n`;
+            text += `PAYE  : ${d.paid} DA\n`;
+            if (d.rest > 0) {
+                text += `RESTE : ${d.rest} DA\n`;
+            }
+            text += '\x1B\x21\x00';
+            text += '--------------------------------\n';
+            text += '\x1B\x61\x01';
+            text += 'Merci pour votre confiance !\n\n\n\n';
+
+            const bytes = encoder.encode(text);
+            const chunkSize = 256; // حجم آمن لجميع طابعات البلوتوث الصينية والقياسية
+            for (let i = 0; i < bytes.length; i += chunkSize) {
+                const chunk = bytes.slice(i, i + chunkSize);
+                if (writeChar.properties.writeWithoutResponse) {
+                    await writeChar.writeValueWithoutResponse(chunk);
+                } else {
+                    await writeChar.writeValue(chunk);
+                }
+            }
+
+            toast(state.lang === 'ar' ? '✓ تمت الطباعة بنجاح!' : '✓ Impression terminée !');
+        } catch (err) {
+            if (err.name !== 'NotFoundError') { // تجاهل إذا ألغى المستخدم النافذة يدوياً
+                toast(state.lang === 'ar' ? 'تعذرت الطباعة: تأكد من تشغيل الطابعة' : 'Erreur Bluetooth');
+            }
+        }
     }
 
     function shareReceiptWhatsApp() {
@@ -1672,7 +1778,7 @@
         toast('✓');
     }
 
-        function importBackupJSON(event) {
+    function importBackupJSON(event) {
         const input = event.target;
         const file = input.files[0];
         if (!file) return;
